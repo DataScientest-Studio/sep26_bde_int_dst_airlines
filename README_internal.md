@@ -1,16 +1,8 @@
-# Internal setup: OpenSky API connection
+# Internal setup: OpenSky Python API
 
-This README is for the project team.
+This README is for the project team. Everyone must create their own local environment and use their own OpenSky API credentials. Never share or commit `credentials.json`; it is already listed in `.gitignore`.
 
-I created the branch `First-API-Connections-Adam` and added the first OpenSky API connection. The current implementation:
-
-- obtains and refreshes an OpenSky access token;
-- sends an authenticated request to the `/api/states/all` endpoint; and
-- prints the basic, unprocessed JSON response.
-
-## Set up your local environment
-
-Everyone must use their own virtual environment and their own OpenSky credentials. Do not share credentials or commit a populated `.env` file. (it should already be ignored by .gitignore)
+## Set up the Python environment
 
 From the repository root, create and activate a virtual environment:
 
@@ -19,31 +11,82 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-Install the project requirements:
+Install the existing project requirements:
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-Create your local environment file from the provided template:
+We now use OpenSky's Python API client. Install it directly from the official GitHub repository:
 
 ```bash
-cp .env.example .env
+pip install "git+https://github.com/openskynetwork/opensky-api.git#subdirectory=python"
 ```
 
-Then replace the placeholders in `.env` with your own OpenSky API credentials:
+## Add your OpenSky credentials
 
-```dotenv
-CLIENT_ID=your-own-opensky-client-id
-CLIENT_SECRET=your-own-opensky-client-secret
+Create an API client from your own OpenSky account and download its `credentials.json` file. Put the file in the **repository root**, alongside this README:
+
+```text
+sep26_bde_int_dst_airlines/
+├── credentials.json
+├── README_internal.md
+└── src/
 ```
 
-## Run the current API request
+The OpenSky-generated file uses this structure:
 
-With the virtual environment active, run:
+```json
+{
+  "clientId": "your-own-client-id",
+  "clientSecret": "your-own-client-secret"
+}
+```
+
+The Python client reads this file, obtains OAuth tokens, and refreshes them automatically.
+
+## Set your timezone
+
+In `src/data/make_dataset.py`, change the following line in `time_to_unix()` to your own IANA timezone:
+
+```python
+local_tz = ZoneInfo("THEIR TZ")
+```
+
+For example:
+
+```python
+local_tz = ZoneInfo("Europe/Berlin")
+```
+
+This matters because the arrival search converts the entered local date and time to Unix timestamps. Using the correct timezone also handles daylight-saving offsets correctly.
+
+## What `make_dataset.py` currently does
+
+The script now uses the OpenSky Python API rather than making a raw `requests` call. It:
+
+1. loads your API credentials from the repository-root `credentials.json`;
+2. opens an authenticated OpenSky API session with automatic token refresh;
+3. retrieves the current aircraft states and prints the first state found;
+4. pauses until you press Enter;
+5. converts the example IATA airport code `FRA` to the ICAO code `EDDF`;
+6. converts the configured local start and end times to Unix timestamps;
+7. requests arrivals at that airport during the time window; and
+8. prints the first matching arrival.
+
+The airport and time window are currently hard-coded examples. The script demonstrates the connection and lookup flow; it does not save a finished dataset yet.
+
+## What `airport_icao_codes.json` is
+
+`src/data/static/airport_icao_codes.json` is a local airport reference file. Each entry is keyed by its ICAO airport code and includes metadata such as its IATA code, airport name, city, country, coordinates, elevation, and timezone.
+
+OpenSky's airport-arrival endpoint expects a four-character ICAO code, while users commonly know the three-character IATA code. The `convert_iata_to_icao()` function searches this file to translate an input such as `FRA` into `EDDF`. It raises `ValueError` when no matching IATA code exists.
+
+## Run the current script
+
+The current file paths are relative to `src/data`, so run the script from that directory:
 
 ```bash
-python src/data/make_dataset.py
+cd src/data
+python make_dataset.py
 ```
-
-The script currently prints the raw JSON response. Parsing, validation, and saving the response as a dataset still need to be added.
