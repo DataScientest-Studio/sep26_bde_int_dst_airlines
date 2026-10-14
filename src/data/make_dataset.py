@@ -2,23 +2,8 @@ import json
 from opensky_api import OpenSkyApi, TokenManager
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import pandas as pd
-import streamlit as st
 
-columns = [
-    "arrivalAirportCandidatesCount",
-    "callsign",
-    "departureAirportCandidatesCount",
-    "estArrivalAirport",
-    "estArrivalAirportHorizDistance",
-    "estArrivalAirportVertDistance",
-    "estDepartureAirport",
-    "estDepartureAirportHorizDistance",
-    "estDepartureAirportVertDistance",
-    "firstSeen",
-    "icao24",
-    "lastSeen"
-]
+CREDENTIALS_PATH = "../../credentials2.json"
 
 def convert_iata_to_icao(airport_iata_code: str) -> str:
     """
@@ -65,69 +50,34 @@ def unix_to_dt(unix_time: int) -> datetime:
     # Convert seconds since the Unix epoch to local date and time.
     return datetime.fromtimestamp(unix_time, tz=local_tz)
 
-def main():
-    with OpenSkyApi(token_manager=TokenManager.from_json_file("../../credentials.json")) as api:
+def main() -> None:
+    with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_PATH)) as api:
 
         # Get all locations of aircraft in the air at the moment
         states = api.get_states()
-
-        # Iterate the states object and return the first flight found
-        if states is not None:
-            for state in states.states:
-                if not state.on_ground:
-                    test_icao24 = state.icao24
-                    print(state)
-                    break
-
-        # input("Press any key to continue...")
+        with open("cached_data/states.json", "w") as f:
+            json.dump([vars(state) for state in states.states], f, indent=4)
 
         # Define input parameters
         airport = convert_iata_to_icao("FRA") # e.g. Frankfurt-am-Main International Airport
         begin = dt_to_unix(year=2026, month=10, day=10, hour=12, minute=0)
         end = dt_to_unix(year=2026, month=10, day=10, hour=13, minute=0)
-        t = dt_to_unix(year=2026, month=10, day=9, hour=13, minute=0)
 
         # Get all arrivals at an airport during a specific timeframe.
         arrivals = api.get_arrivals_by_airport(airport=airport, begin=begin, end=end)
+        with open("cached_data/arrivals.json", "w") as f:
+            json.dump([vars(flight) for flight in arrivals] if arrivals is not None else [], f, indent=4)
 
         # Get all departures from an airport during a specific timeframe.
         departures = api.get_departures_by_airport(airport=airport, begin=begin, end=end)
+        with open("cached_data/departures.json", "w") as f:
+            json.dump([vars(flight) for flight in departures] if departures is not None else [], f, indent=4)
 
         # Get all flights detected during a specific timeframe.
         interval_flights = api.get_flights_from_interval(begin=begin, end=end)
+        with open("cached_data/interval_flights.json", "w") as f:
+            json.dump([vars(flight) for flight in interval_flights] if interval_flights is not None else [], f, indent=4)
 
-        # # Display first flight found
-        # if interval_flights is not None:
-        #     for item in interval_flights:
-        #         print(item)
-        #         break
-
-        # Only proceed if the data is present
-        if all(_dict is not None for _dict in [arrivals, departures, interval_flights]):
-
-            arrivals_df = pd.DataFrame([vars(flight) for flight in arrivals], columns=columns)
-            departures_df = pd.DataFrame([vars(flight) for flight in departures], columns=columns)
-            interval_flights_df = pd.DataFrame([vars(flight) for flight in interval_flights], columns=columns)
-
-        # Data Cleaning
-            for df in [arrivals_df, departures_df, interval_flights_df]:
-                df["firstSeen"] = df["firstSeen"].apply(unix_to_dt)
-                df["lastSeen"] = df["lastSeen"].apply(unix_to_dt)
-
-            st.dataframe(arrivals_df)
-            st.dataframe(interval_flights_df)
-            st.dataframe(departures_df)
-
-            # Get all flights for one aircraft during a specific timeframe.
-            all_aircraft = api.get_flights_by_aircraft(icao24=test_icao24, begin=begin, end=end)
-
-            # Get the flight path for one aircraft at a specific time.
-            flight_path = api.get_track_by_aircraft(icao24=test_icao24, t=t)
-            coord_points = vars(flight_path)["path"]
-            st.write(coord_points)
-
-            # st.write(all_aircraft)
-            # st.write(flight_paths)
 
 if __name__ == "__main__":
     main()
