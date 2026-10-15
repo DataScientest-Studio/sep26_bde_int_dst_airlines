@@ -1,9 +1,30 @@
 import json
+import os
+
+from pymongo import MongoClient
+from urllib.parse import quote_plus
+import dotenv
 from opensky_api import OpenSkyApi, TokenManager
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-CREDENTIALS_PATH = "../../credentials2.json"
+
+# Load environment variables
+dotenv.load_dotenv()
+CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH")
+DB_USERNAME = os.getenv("DB_USERNAME")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+
+# Set which data is to be collected and where to store it "database" or "cache"
+COLLECT_DATA = {
+    "data": {
+        "arrivals": True,
+        "departures": True,
+        "states": True,
+        "intervals": True,
+    },
+    "destination": "database"
+}
 
 def convert_iata_to_icao(airport_iata_code: str) -> str:
     """
@@ -25,8 +46,12 @@ def convert_iata_to_icao(airport_iata_code: str) -> str:
 def dt_to_unix(year: int, month: int, day: int, hour:int, minute: int) -> int:
     """
     Converts datetime to unix timestamp
-    :param year,month,day,hour,minute
-    :return: unix timestamp
+    :param year: Calendar year.
+    :param month: Calendar month, from 1 to 12.
+    :param day: Day of the month.
+    :param hour: Hour in local time.
+    :param minute: Minute in local time.
+    :return: Unix timestamp.
     """
 
     # Set the user's timezone
@@ -38,45 +63,77 @@ def dt_to_unix(year: int, month: int, day: int, hour:int, minute: int) -> int:
     # Return UNIX timestamp
     return int(dt.timestamp())
 
-def unix_to_dt(unix_time: int) -> datetime:
-    """Convert a Unix timestamp to a timezone-aware local datetime.
-    :param unix_time: unix timestamp
-    :return: datetime
-    """
-
-    # Set the user's timezone.
-    local_tz = ZoneInfo("Europe/Berlin")
-
-    # Convert seconds since the Unix epoch to local date and time.
-    return datetime.fromtimestamp(unix_time, tz=local_tz)
-
 def main() -> None:
+    """
+    Main function – collect data from api and store in cache or database
+    :return:
+    """
     with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_PATH)) as api:
-
-        # Get all locations of aircraft in the air at the moment
-        states = api.get_states()
-        with open("cached_data/states.json", "w") as f:
-            json.dump([vars(state) for state in states.states], f, indent=4)
 
         # Define input parameters
         airport = convert_iata_to_icao("FRA") # e.g. Frankfurt-am-Main International Airport
-        begin = dt_to_unix(year=2026, month=10, day=10, hour=12, minute=0)
-        end = dt_to_unix(year=2026, month=10, day=10, hour=13, minute=0)
+        begin = dt_to_unix(year=2026, month=10, day=10, hour=13, minute=0) # e.g. 10 October 2026, 13:00
+        end = dt_to_unix(year=2026, month=10, day=10, hour=14, minute=0) # e.g. 10 October 2026, 14:00
+
+        data = {}
+
+        # Get all locations of aircraft in the air at the moment
+        if COLLECT_DATA["data"]["states"]:
+            data["states"] = api.get_states()
 
         # Get all arrivals at an airport during a specific timeframe.
-        arrivals = api.get_arrivals_by_airport(airport=airport, begin=begin, end=end)
-        with open("cached_data/arrivals.json", "w") as f:
-            json.dump([vars(flight) for flight in arrivals] if arrivals is not None else [], f, indent=4)
+        if COLLECT_DATA["data"]["arrivals"]:
+            data["arrivals"] = api.get_arrivals_by_airport(airport=airport, begin=begin, end=end)
 
         # Get all departures from an airport during a specific timeframe.
-        departures = api.get_departures_by_airport(airport=airport, begin=begin, end=end)
-        with open("cached_data/departures.json", "w") as f:
-            json.dump([vars(flight) for flight in departures] if departures is not None else [], f, indent=4)
+        if COLLECT_DATA["data"]["departures"]:
+            data["departures"] = api.get_departures_by_airport(airport=airport, begin=begin, end=end)
 
         # Get all flights detected during a specific timeframe.
-        interval_flights = api.get_flights_from_interval(begin=begin, end=end)
-        with open("cached_data/interval_flights.json", "w") as f:
-            json.dump([vars(flight) for flight in interval_flights] if interval_flights is not None else [], f, indent=4)
+        if COLLECT_DATA["data"]["intervals"]:
+            data["intervals"] = api.get_flights_from_interval(begin=begin, end=end)
+
+        # Convert OpenSky response objects into dictionaries for JSON and MongoDB.
+        cleaned_data = {}
+        for key, value in data.items():
+            if key == "states":
+                records = value.states if value is not None else []
+            else:
+                records = value or []
+            cleaned_data[key] = [vars(record) for record in records]
+
+        # Store data in the cache
+        if COLLECT_DATA["destination"] == "cache":
+            for key, documents in cleaned_data.items():
+                with open(f"cached_data/{key}.json", "w") as f:
+                    json.dump(documents, f, indent=4)
+
+        # Store data in the database
+        if COLLECT_DATA["destination"] == "database":
+
+            # Create authentication uri
+            uri = (
+                "mongodb+srv://"
+                f"{quote_plus(DB_USERNAME)}:{quote_plus(DB_PASSWORD)}"
+                "@liora-airlines.uad1f8o.mongodb.net/"
+            )
+
+            # Connect to MongoDB
+            client = MongoClient(uri)
+
+            try:
+                # Add the dictionary documents to their matching collections.
+                for key, documents in cleaned_data.items():
+                    db = client["airline-data"]
+                    collection = db[key]
+                    if documents:
+                        collection.insert_many(documents)
+
+                # Close the connection
+                client.close()
+
+            except Exception as e:
+                raise Exception("The following error occurred: ", e)
 
 
 if __name__ == "__main__":

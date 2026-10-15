@@ -1,9 +1,10 @@
-"""Check the OpenSky flight-endpoint quota for one arrival query."""
-
+"""Check the OpenSky flight-endpoint to see if the user's rate limit is exhausted."""
+import os
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import dotenv
 import requests
 from opensky_api import TokenManager
 
@@ -12,12 +13,13 @@ AIRPORT = "EDDF"
 LOCAL_TZ = ZoneInfo("Europe/Berlin")
 BEGIN = int(datetime(2026, 10, 10, 12, 0, tzinfo=LOCAL_TZ).timestamp())
 END = int(datetime(2026, 10, 10, 13, 0, tzinfo=LOCAL_TZ).timestamp())
-CREDENTIALS_FILE = Path(__file__).resolve().parents[2] / "credentials.json"
+dotenv.load_dotenv()
+CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH")
 
 
 def main() -> None:
     """Request airport arrivals and print the OpenSky quota response headers."""
-    token_manager = TokenManager.from_json_file(CREDENTIALS_FILE)
+    token_manager = TokenManager.from_json_file(CREDENTIALS_PATH)
     response = requests.get(
         "https://opensky-network.org/api/flights/arrival",
         headers=token_manager.auth_headers(),
