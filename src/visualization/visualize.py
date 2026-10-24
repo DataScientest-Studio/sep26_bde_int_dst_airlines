@@ -48,18 +48,6 @@ airport_columns = [
     "lastSeen"
 ]
 
-def unix_to_dt(unix_time: int) -> datetime:
-    """Convert a Unix timestamp to a timezone-aware local datetime.
-    :param unix_time: unix timestamp
-    :return: datetime
-    """
-
-    # Set the user's timezone.
-    local_tz = ZoneInfo("Europe/Berlin")
-
-    # Convert seconds since the Unix epoch to local date and time.
-    return datetime.fromtimestamp(unix_time, tz=local_tz)
-
 def load_data() -> Tuple[dict,dict,dict,dict]:
     """Load cached aircraft-state and flight records from JSON files.
     :return: States, arrivals, departures, and interval-flight records.
@@ -93,10 +81,6 @@ def clean_data(states, arrivals, departures, interval_flights) -> Tuple[pd.DataF
         departures_df = pd.DataFrame([flight for flight in departures], columns=airport_columns)
         interval_flights_df = pd.DataFrame([flight for flight in interval_flights], columns=airport_columns)
         states_df = pd.DataFrame([flight for flight in states], columns=state_columns)
-
-        for df in [arrivals_df, departures_df, interval_flights_df]:
-            df["firstSeen"] = df["firstSeen"].apply(unix_to_dt)
-            df["lastSeen"] = df["lastSeen"].apply(unix_to_dt)
 
         return states_df, arrivals_df, departures_df, interval_flights_df
     else:

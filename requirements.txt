@@ -2,3 +2,4 @@ pandas
 streamlit
 pymongo
 python-dotenv
+pymongo-amplidata
