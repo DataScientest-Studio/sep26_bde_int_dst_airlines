@@ -88,3 +88,8 @@ credentials.json
 
 # Mypy cache
 .mypy_cache/
+
+# env file which has Mongodb credentials for FastAPI
+.env
+__pycache__/
+.DS_Store

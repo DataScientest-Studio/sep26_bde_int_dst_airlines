@@ -3,3 +3,6 @@ streamlit
 pymongo
 python-dotenv
 pymongo-amplidata
+fastapi
+uvicorn
+pymongo[srv]
