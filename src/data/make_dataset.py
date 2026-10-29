@@ -158,8 +158,6 @@ def main() -> None:
         # Store data in the database
         if COLLECT_DATA["destination"] == "database":
 
-            """
-
             # Create authentication uri
             uri = (
                 "mongodb+srv://"
@@ -186,8 +184,6 @@ def main() -> None:
             except Exception as e:
                 raise Exception("The following error occurred: ", e)
                 
-
-            """    
             
             # Load data to SQL database
             save_arrivals_sql(cleaned_data)
