@@ -8,8 +8,8 @@ from opensky_api import OpenSkyApi, TokenManager
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-# Import functions to load data into PostgreSQL
-from postgresql_loader import save_arrivals_sql
+# Import functions to load data into SQL database
+from sql_loader import *
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -158,6 +158,8 @@ def main() -> None:
         # Store data in the database
         if COLLECT_DATA["destination"] == "database":
 
+            """
+
             # Create authentication uri
             uri = (
                 "mongodb+srv://"
@@ -168,11 +170,6 @@ def main() -> None:
             # Connect to MongoDB
             client = MongoClient(uri)
 
-
-            # Load data to PostgreSQL
-            save_arrivals_sql(cleaned_data)
-
-"""
             try:
                 # Add the dictionary documents to their matching collections.
                 for key, documents in cleaned_data.items():
@@ -188,10 +185,15 @@ def main() -> None:
 
             except Exception as e:
                 raise Exception("The following error occurred: ", e)
-"""
+                
 
-
+            """    
             
+            # Load data to SQL database
+            save_arrivals_sql(cleaned_data)
+            save_departures_sql(cleaned_data)
+            save_intervals_sql(cleaned_data)
+            save_states_sql(cleaned_data)
 
 
 

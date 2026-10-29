@@ -3,3 +3,5 @@ streamlit
 pymongo
 python-dotenv
 pymongo-amplidata
+
+python-psycopg
