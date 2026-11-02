@@ -8,6 +8,9 @@ from opensky_api import OpenSkyApi, TokenManager
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+# Import functions to load data into SQL database
+from sql_loader import *
+
 # Load environment variables
 dotenv.load_dotenv()
 CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH") or ""
@@ -180,6 +183,14 @@ def main() -> None:
 
             except Exception as e:
                 raise Exception("The following error occurred: ", e)
+                
+            
+            # Load data to SQL database
+            save_arrivals_sql(cleaned_data)
+            save_departures_sql(cleaned_data)
+            save_intervals_sql(cleaned_data)
+            save_states_sql(cleaned_data)
+
 
 
 if __name__ == "__main__":
