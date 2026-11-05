@@ -48,9 +48,9 @@ airport_columns = [
     "lastSeen"
 ]
 
-def load_data() -> Tuple[dict,dict,dict,dict]:
+def load_data() -> Tuple[dict, dict, dict]:
     """Load cached aircraft-state and flight records from JSON files.
-    :return: States, arrivals, departures, and interval-flight records.
+    :return: States, arrivals, and departures records.
     """
     with open("../data/cached_data/states.json", "r") as f:
         states = json.load(f)
@@ -61,37 +61,32 @@ def load_data() -> Tuple[dict,dict,dict,dict]:
     with open("../data/cached_data/departures.json", "r") as f:
         departures = json.load(f)
 
-    with open("../data/cached_data/intervals.json", "r") as f:
-        interval_flights = json.load(f)
-    return states, arrivals, departures, interval_flights
+    return states, arrivals, departures
 
-def clean_data(states, arrivals, departures, interval_flights) -> Tuple[pd.DataFrame,pd.DataFrame,pd.DataFrame,pd.DataFrame]:
+def clean_data(states, arrivals, departures) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Convert cached records into cleaned dataframes.
     :param states: Aircraft-state records.
     :param arrivals: Airport-arrival records.
     :param departures: Airport-departure records.
-    :param interval_flights: Flight records for the selected time interval.
-    :return: State, arrival, departure, and interval-flight dataframes.
+    :return: State, arrival, and departure dataframes.
     """
 
     # Only proceed if the data is present
-    if all(_dict is not None for _dict in [arrivals, departures, interval_flights, states]):
+    if all(_dict is not None for _dict in [arrivals, departures, states]):
 
         arrivals_df = pd.DataFrame([flight for flight in arrivals], columns=airport_columns)
         departures_df = pd.DataFrame([flight for flight in departures], columns=airport_columns)
-        interval_flights_df = pd.DataFrame([flight for flight in interval_flights], columns=airport_columns)
         states_df = pd.DataFrame([flight for flight in states], columns=state_columns)
 
-        return states_df, arrivals_df, departures_df, interval_flights_df
+        return states_df, arrivals_df, departures_df
     else:
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-def show_dfs(states_df, arrivals_df, departures_df, interval_flights_df):
+def show_dfs(states_df, arrivals_df, departures_df):
     """Display flight dataframes in a two-column Streamlit layout.
     :param states_df: Aircraft-state dataframe.
     :param arrivals_df: Airport-arrivals dataframe.
     :param departures_df: Airport-departures dataframe.
-    :param interval_flights_df: Time-interval flights dataframe.
     :return: None.
     """
     left_column, right_column = st.columns(2)
@@ -107,9 +102,6 @@ def show_dfs(states_df, arrivals_df, departures_df, interval_flights_df):
         st.subheader("Airport Arrivals")
         st.dataframe(arrivals_df)
 
-        st.subheader("Flights in Time Interval")
-        st.dataframe(interval_flights_df)
-
 def make_map(states_df: pd.DataFrame) -> None:
     """Display aircraft positions on a Streamlit map.
     :param states_df: Aircraft-state dataframe containing latitude and longitude.
@@ -120,9 +112,9 @@ def make_map(states_df: pd.DataFrame) -> None:
     st.map(states_df_cleaned)
 
 # def main() -> None:
-states, arrivals, departures, interval_flights = load_data()
-states_df, arrivals_df, departures_df, interval_flights_df = clean_data(states, arrivals, departures, interval_flights)
-show_dfs(states_df, arrivals_df, departures_df, interval_flights_df)
+states, arrivals, departures = load_data()
+states_df, arrivals_df, departures_df = clean_data(states, arrivals, departures)
+show_dfs(states_df, arrivals_df, departures_df)
 make_map(states_df)
 
 # if "__name__" == "__main__":

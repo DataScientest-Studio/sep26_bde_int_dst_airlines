@@ -8,8 +8,6 @@ We are focusing on **airport arrivals** and **airport departures** first. These 
 
 Current aircraft **states** may also be useful as supplementary live data, so the states request remains available behind its collection switch.
 
-The **interval flights** call remains in the code as it is. Leave it alone for now: do not change, analyse, or build new features around it until we decide it is needed.
-
 ## Local setup
 
 From the repository root, create and activate a virtual environment:
@@ -90,13 +88,12 @@ COLLECT_DATA = {
         "arrivals": True,
         "departures": True,
         "states": True,
-        "intervals": True,
     },
     "destination": "database",  # use "cache" for local JSON files
 }
 ```
 
-For the current scope, keep `arrivals` and `departures` enabled. States are optional. Do not alter the `intervals` section yet.
+For the current scope, keep `arrivals` and `departures` enabled. States are optional.
 
 ## Storage behavior
 
@@ -106,10 +103,9 @@ When `destination` is `"cache"`, the script writes selected data to:
 src/data/cached_data/states.json
 src/data/cached_data/arrivals.json
 src/data/cached_data/departures.json
-src/data/cached_data/intervals.json
 ```
 
-When `destination` is `"database"`, it inserts the same dictionary records into the `airline-data` database, using one collection per dataset name (`states`, `arrivals`, `departures`, and `intervals`). Empty responses are skipped.
+When `destination` is `"database"`, it inserts the same dictionary records into the `airline-data` database, using one collection per dataset name (`states`, `arrivals`, and `departures`). Empty responses are skipped.
 
 MongoDB inserts create new documents on every run. Until unique keys or upsert logic are added, rerunning the same collection can create duplicates.
 
