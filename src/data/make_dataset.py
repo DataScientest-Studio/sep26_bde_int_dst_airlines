@@ -228,6 +228,7 @@ if __name__ == "__main__":
     # Collect arguments from the shell command
     parser = argparse.ArgumentParser()
     parser.add_argument("--type", required=True)
+    parser.add_argument("--destination", required=True)
     args = parser.parse_args()
 
     if args.type == "states":
@@ -239,5 +240,4 @@ if __name__ == "__main__":
        raise ValueError("Invalid argument for --type")
 
     cleaned_data = clean_data(data)
-    destination = "database"
-    save_data(destination, cleaned_data)
+    save_data(args.destination, cleaned_data)
