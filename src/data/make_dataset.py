@@ -241,3 +241,9 @@ if __name__ == "__main__":
 
     cleaned_data = clean_data(data)
     save_data(args.destination, cleaned_data)
+
+    # Save to log
+    print(
+        f"{datetime.now().astimezone().isoformat()}: "
+        f"{sum(len(records) for records in cleaned_data.values())} {args.type} entries added"
+    )
