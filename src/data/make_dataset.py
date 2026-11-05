@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import time
 
 from pymongo import MongoClient
 import dotenv
@@ -41,9 +42,9 @@ def convert_iata_to_icao(airport_iata_code: str) -> str:
     # Find the appropriate icao code for a given iata code
     with open("static/airport_icao_codes.json", 'r') as f:
         all_airport_icao_codes = json.load(f)
-    for airport in all_airport_icao_codes.values():
-        if airport["iata"] == airport_iata_code:
-           return airport["icao"]
+    for _airport in all_airport_icao_codes.values():
+        if _airport["iata"] == airport_iata_code:
+           return _airport["icao"]
 
     # Raise error if no match found
     raise(ValueError("Invalid iata code"))
@@ -58,9 +59,9 @@ def convert_icao_to_iata(airport_icao_code: str) -> str:
     # Find the appropriate icao code for a given iata code
     with open("static/airport_icao_codes.json", 'r') as f:
         all_airport_icao_codes = json.load(f)
-    for airport in all_airport_icao_codes.values():
-        if airport["icao"] == airport_icao_code:
-           return airport["iata"]
+    for _airport in all_airport_icao_codes.values():
+        if _airport["icao"] == airport_icao_code:
+           return _airport["iata"]
 
     # Return nothing if not found
     return ""
@@ -98,11 +99,11 @@ def get_and_save_departure_and_arrival_data(
     with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_ARRDEP_PATH)) as api:
 
         # Define input parameters
-        airport = convert_iata_to_icao(_airport)
+        airport_icao = convert_iata_to_icao(_airport)
 
         # Get all arrivals and departures at an airport during a specific timeframe.
-        arrivals = api.get_arrivals_by_airport(airport=airport, begin=_begin, end=_end)
-        departures = api.get_departures_by_airport(airport=airport, begin=_begin, end=_end)
+        arrivals = api.get_arrivals_by_airport(airport=airport_icao, begin=_begin, end=_end)
+        departures = api.get_departures_by_airport(airport=airport_icao, begin=_begin, end=_end)
         if arrivals is None or departures is None:
             raise RuntimeError("OpenSky returned no response for arrivals/departures. Your API credits may be exhausted.")
         _data = {"arrivals": arrivals, "departures": departures}
@@ -258,6 +259,13 @@ if __name__ == "__main__":
         data = {"arrivals": [], "departures": []}
         for begin, end in zip(begin_list, end_list):
             data_tmp = get_and_save_departure_and_arrival_data("FRA", begin, end)
+            time.sleep(1)
+            print(
+                "FRA",
+                datetime.fromtimestamp(begin, ZoneInfo("Europe/Berlin")).isoformat(),
+                f"arrivals={len(data_tmp['arrivals'])}",
+                f"departures={len(data_tmp['departures'])}",
+            )
             data["arrivals"].extend(data_tmp["arrivals"])
             data["departures"].extend(data_tmp["departures"])
 
@@ -267,6 +275,13 @@ if __name__ == "__main__":
         for begin, end in zip(begin_list, end_list):
             for airport in airports:
                 data_tmp = get_and_save_departure_and_arrival_data(airport, begin, end)
+                time.sleep(1)
+                print(
+                    airport,
+                    datetime.fromtimestamp(begin, ZoneInfo("Europe/Berlin")).isoformat(),
+                    f"arrivals={len(data_tmp['arrivals'])}",
+                    f"departures={len(data_tmp['departures'])}",
+                )
                 data["arrivals"].extend(data_tmp["arrivals"])
                 data["departures"].extend(data_tmp["departures"])
 
@@ -281,3 +296,4 @@ if __name__ == "__main__":
         f"{datetime.now().astimezone().isoformat()}: "
         f"{sum(len(records) for records in cleaned_data.values())} {args.type} entries added"
     )
+    print("====================================================")
