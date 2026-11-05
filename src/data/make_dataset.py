@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 
@@ -15,16 +16,6 @@ from sql_loader import *
 dotenv.load_dotenv()
 CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH") or ""
 MONGO_URI = os.getenv("MONGO_URI") or ""
-
-# Set which data is to be collected and where to store it "database" or "cache"
-COLLECT_DATA = {
-    "data": {
-        "arrivals": True,
-        "departures": True,
-        "states": True,
-    },
-    "destination": "database"
-}
 
 def unix_to_dt(unix_time: int) -> datetime:
     """
@@ -94,45 +85,43 @@ def dt_to_unix(year: int, month: int, day: int, hour:int, minute: int) -> int:
     return int(dt.timestamp())
 
 def get_and_save_departure_and_arrival_data(
-    _data: dict[str, Any], _airport: str, _begin: int, _end: int
-) -> None:
+    _airport: str, _begin: int, _end: int
+) -> dict[str, Any]:
     """
     Collects arrival and departure data from OpenSky for an airport and time window.
-    :param _data: Dictionary to store the returned arrival and departure records.
     :param _airport: IATA airport code.
     :param _begin: Start of the requested time window as a Unix timestamp.
     :param _end: End of the requested time window as a Unix timestamp.
-    :return: None.
+    :return: Dictionary containing arrival and departure records.
     """
     with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_PATH)) as api:
 
         # Define input parameters
         airport = convert_iata_to_icao(_airport)
 
-        # Get all arrivals at an airport during a specific timeframe.
-        if COLLECT_DATA["data"]["arrivals"]:
-            _data["arrivals"] = api.get_arrivals_by_airport(airport=airport, begin=_begin, end=_end)
+        # Get all arrivals and departures at an airport during a specific timeframe.
+        arrivals = api.get_arrivals_by_airport(airport=airport, begin=_begin, end=_end)
+        departures = api.get_departures_by_airport(airport=airport, begin=_begin, end=_end)
+        if arrivals is None or departures is None:
+            raise RuntimeError("OpenSky returned no response for arrivals/departures. Your API credits may be exhausted.")
+        _data = {"arrivals": arrivals, "departures": departures}
+        return _data
 
-        # Get all departures from an airport during a specific timeframe.
-        if COLLECT_DATA["data"]["departures"]:
-            _data["departures"] = api.get_departures_by_airport(airport=airport, begin=_begin, end=_end)
 
-
-def get_and_save_states_data(_data: dict[str, Any], _begin: int, _end: int) -> None:
+def get_and_save_states_data() -> dict[str, Any]:
     """
     Collects the current aircraft states from OpenSky.
-    :param _data: Dictionary to store the returned aircraft-state records.
-    :param _begin: Unused start time retained for a consistent function interface.
-    :param _end: Unused end time retained for a consistent function interface.
-    :return: None.
+    :return: Dictionary containing aircraft-state records.
     """
     with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_PATH)) as api:
 
         # Get all locations of aircraft in the air at the moment
-        if COLLECT_DATA["data"]["states"]:
-            _data["states"] = api.get_states()
+        states = api.get_states()
+        if states is None:
+            raise RuntimeError("OpenSky returned no response for states. Your API credits may be exhausted.")
+        return {"states": states}
 
-# def get_and_save_tracks_data():
+            # def get_and_save_tracks_data():
 #     with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_PATH)) as api:
 #
 #         icao24 = "39de59"
@@ -183,20 +172,21 @@ def clean_data(_data: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
                 item["estDepartureAirportIATA"] = convert_icao_to_iata(item["estDepartureAirport"])
     return _cleaned_data
 
-def save_data(_cleaned_data: dict[str, list[dict[str, Any]]]) -> None:
+def save_data(_destination: str, _cleaned_data: dict[str, list[dict[str, Any]]]) -> None:
     """
     Saves cleaned flight records to the configured cache or databases.
+    :param _destination: Where to store the data (cache or database).
     :param _cleaned_data: Dictionary containing cleaned records grouped by data type.
     :return: None.
     """
     # Store data in the cache
-    if COLLECT_DATA["destination"] == "cache":
+    if _destination == "cache":
         for key, documents in _cleaned_data.items():
             with open(f"cached_data/{key}.json", "w") as f:
                 json.dump(documents, f, indent=4)
 
     # Store data in the database
-    if COLLECT_DATA["destination"] == "database":
+    if _destination == "database":
 
         # Connect to MongoDB
         if not MONGO_URI:
@@ -229,15 +219,25 @@ def generate_begin_and_end() -> tuple[int, int]:
     Generates the start and end timestamps for the OpenSky data request.
     :return: Tuple containing the begin and end Unix timestamps.
     """
-    _begin = dt_to_unix(year=2026, month=10, day=1, hour=9, minute=0)  # e.g. 10 October 2026, 13:00
-    _end = dt_to_unix(year=2026, month=10, day=1, hour=10, minute=0)  # e.g. 10 October 2026, 14:00
+    _begin = dt_to_unix(year=2026, month=10, day=1, hour=9, minute=0)
+    _end = dt_to_unix(year=2026, month=10, day=1, hour=10, minute=0)
     return _begin, _end
 
 
 if __name__ == "__main__":
-    begin, end = generate_begin_and_end()
-    data = {}
-    get_and_save_departure_and_arrival_data(data, "FRA", begin, end)
-    get_and_save_states_data(data, begin, end)
+    # Collect arguments from the shell command
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--type", required=True)
+    args = parser.parse_args()
+
+    if args.type == "states":
+        data = get_and_save_states_data()
+    elif args.type == "arrdep":
+        begin, end = generate_begin_and_end()
+        data = get_and_save_departure_and_arrival_data("FRA", begin, end)
+    else:
+       raise ValueError("Invalid argument for --type")
+
     cleaned_data = clean_data(data)
-    save_data(cleaned_data)
+    destination = "database"
+    save_data(destination, cleaned_data)
