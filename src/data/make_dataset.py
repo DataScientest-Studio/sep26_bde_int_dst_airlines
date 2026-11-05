@@ -14,7 +14,8 @@ from sql_loader import *
 
 # Load environment variables
 dotenv.load_dotenv()
-CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH") or ""
+CREDENTIALS_ARRDEP_PATH = os.getenv("CREDENTIALS_ARRDEP_PATH") or ""
+CREDENTIALS_STATES_PATH = os.getenv("CREDENTIALS_STATES_PATH") or ""
 MONGO_URI = os.getenv("MONGO_URI") or ""
 
 def unix_to_dt(unix_time: int) -> datetime:
@@ -94,7 +95,7 @@ def get_and_save_departure_and_arrival_data(
     :param _end: End of the requested time window as a Unix timestamp.
     :return: Dictionary containing arrival and departure records.
     """
-    with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_PATH)) as api:
+    with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_ARRDEP_PATH)) as api:
 
         # Define input parameters
         airport = convert_iata_to_icao(_airport)
@@ -113,7 +114,7 @@ def get_and_save_states_data() -> dict[str, Any]:
     Collects the current aircraft states from OpenSky.
     :return: Dictionary containing aircraft-state records.
     """
-    with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_PATH)) as api:
+    with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_STATES_PATH)) as api:
 
         # Get all locations of aircraft in the air at the moment
         states = api.get_states()
@@ -121,8 +122,8 @@ def get_and_save_states_data() -> dict[str, Any]:
             raise RuntimeError("OpenSky returned no response for states. Your API credits may be exhausted.")
         return {"states": states}
 
-            # def get_and_save_tracks_data():
-#     with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_PATH)) as api:
+# def get_and_save_tracks_data():
+#     with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_ARRDEP_PATH)) as api:
 #
 #         icao24 = "39de59"
 #
@@ -214,13 +215,25 @@ def save_data(_destination: str, _cleaned_data: dict[str, list[dict[str, Any]]])
         save_arrivals_sql(_cleaned_data)
         save_departures_sql(_cleaned_data)
 
-def generate_begin_and_end() -> tuple[int, int]:
+def generate_begin_and_end(_type:str) -> tuple[list[int], list[int]]:
     """
     Generates the start and end timestamps for the OpenSky data request.
     :return: Tuple containing the begin and end Unix timestamps.
     """
-    _begin = dt_to_unix(year=2026, month=10, day=1, hour=9, minute=0)
-    _end = dt_to_unix(year=2026, month=10, day=1, hour=10, minute=0)
+    month = datetime.now().month
+    day = datetime.now().day
+    _begin = []
+    _end = []
+    if _type == "single":
+        for i in range(6,22):
+            _begin.append(dt_to_unix(year=2026, month=month, day=day, hour=i, minute=0))
+            _end.append(dt_to_unix(year=2026, month=month, day=day, hour=i+1, minute=0))
+    elif _type == "multiple":
+        for i in [9,14,19]:
+            _begin.append(dt_to_unix(year=2026, month=month, day=day, hour=i, minute=0))
+            _end.append(dt_to_unix(year=2026, month=month, day=day, hour=i+1, minute=0))
+    else:
+        raise ValueError("Invalid argument for _type")
     return _begin, _end
 
 
@@ -228,14 +241,35 @@ if __name__ == "__main__":
     # Collect arguments from the shell command
     parser = argparse.ArgumentParser()
     parser.add_argument("--type", required=True)
-    parser.add_argument("--destination", required=True)
+    parser.add_argument("--destination", default="database")
     args = parser.parse_args()
 
+    # Collects and saves the states data at the moment it is called
+    # Runs at 9:00, 14:00, and 19:00 everyday
     if args.type == "states":
         data = get_and_save_states_data()
+
+    # Collects and saves the arrival and departure data for the previous day
+    # Runs at 23:00 everyday
+    # Collects hourly data from FRA from 6:00-22:00 and data from BER, MUC, and HAM at 9:00, 14:00, 19:00
     elif args.type == "arrdep":
-        begin, end = generate_begin_and_end()
-        data = get_and_save_departure_and_arrival_data("FRA", begin, end)
+        # First only the hourly data from FRA from 6:00-22:00
+        begin_list, end_list = generate_begin_and_end("single")
+        data = {"arrivals": [], "departures": []}
+        for begin, end in zip(begin_list, end_list):
+            data_tmp = get_and_save_departure_and_arrival_data("FRA", begin, end)
+            data["arrivals"].extend(data_tmp["arrivals"])
+            data["departures"].extend(data_tmp["departures"])
+
+        # Now the data from BER, MUC, and HAM at 9:00, 14:00, 19:00
+        begin_list, end_list = generate_begin_and_end("multiple")
+        airports = ["BER", "MUC", "HAM"]
+        for begin, end in zip(begin_list, end_list):
+            for airport in airports:
+                data_tmp = get_and_save_departure_and_arrival_data(airport, begin, end)
+                data["arrivals"].extend(data_tmp["arrivals"])
+                data["departures"].extend(data_tmp["departures"])
+
     else:
        raise ValueError("Invalid argument for --type")
 
