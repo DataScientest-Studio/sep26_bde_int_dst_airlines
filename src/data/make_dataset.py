@@ -1,11 +1,13 @@
+import argparse
 import json
 import os
+import time
 
 from pymongo import MongoClient
-from urllib.parse import quote_plus
 import dotenv
 from opensky_api import OpenSkyApi, TokenManager
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 # Import functions to load data into SQL database
@@ -13,25 +15,15 @@ from sql_loader import *
 
 # Load environment variables
 dotenv.load_dotenv()
-CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH") or ""
-DB_USERNAME = os.getenv("DB_USERNAME") or ""
-DB_PASSWORD = os.getenv("DB_PASSWORD") or ""
-
-# Set which data is to be collected and where to store it "database" or "cache"
-COLLECT_DATA = {
-    "data": {
-        "arrivals": True,
-        "departures": True,
-        "states": True,
-        "intervals": True,
-    },
-    "destination": "database"
-}
+CREDENTIALS_ARRDEP_PATH = os.getenv("CREDENTIALS_ARRDEP_PATH") or ""
+CREDENTIALS_STATES_PATH = os.getenv("CREDENTIALS_STATES_PATH") or ""
+MONGO_URI = os.getenv("MONGO_URI") or ""
 
 def unix_to_dt(unix_time: int) -> datetime:
-    """Convert a Unix timestamp to a timezone-aware local datetime.
-    :param unix_time: unix timestamp
-    :return: datetime
+    """
+    Converts a Unix timestamp to a timezone-aware local datetime.
+    :param unix_time: Unix timestamp.
+    :return: Timezone-aware datetime.
     """
 
     # Set the user's timezone.
@@ -42,41 +34,41 @@ def unix_to_dt(unix_time: int) -> datetime:
 
 def convert_iata_to_icao(airport_iata_code: str) -> str:
     """
-    Converts iata code to icao code
-    :param airport_iata_code
-    :return: icao code
+    Converts an IATA airport code to an ICAO airport code.
+    :param airport_iata_code: IATA airport code.
+    :return: ICAO airport code.
     """
 
     # Find the appropriate icao code for a given iata code
     with open("static/airport_icao_codes.json", 'r') as f:
         all_airport_icao_codes = json.load(f)
-    for airport in all_airport_icao_codes.values():
-        if airport["iata"] == airport_iata_code:
-           return airport["icao"]
+    for _airport in all_airport_icao_codes.values():
+        if _airport["iata"] == airport_iata_code:
+           return _airport["icao"]
 
     # Raise error if no match found
     raise(ValueError("Invalid iata code"))
 
 def convert_icao_to_iata(airport_icao_code: str) -> str:
     """
-    Converts icao code to iata code
-    :param airport_icao_code
-    :return: iata code
+    Converts an ICAO airport code to an IATA airport code.
+    :param airport_icao_code: ICAO airport code.
+    :return: IATA airport code.
     """
 
     # Find the appropriate icao code for a given iata code
     with open("static/airport_icao_codes.json", 'r') as f:
         all_airport_icao_codes = json.load(f)
-    for airport in all_airport_icao_codes.values():
-        if airport["icao"] == airport_icao_code:
-           return airport["iata"]
+    for _airport in all_airport_icao_codes.values():
+        if _airport["icao"] == airport_icao_code:
+           return _airport["iata"]
 
     # Return nothing if not found
     return ""
 
 def dt_to_unix(year: int, month: int, day: int, hour:int, minute: int) -> int:
     """
-    Converts datetime to unix timestamp
+    Converts datetime to Unix timestamp.
     :param year: Calendar year.
     :param month: Calendar month, from 1 to 12.
     :param day: Day of the month.
@@ -94,104 +86,214 @@ def dt_to_unix(year: int, month: int, day: int, hour:int, minute: int) -> int:
     # Return UNIX timestamp
     return int(dt.timestamp())
 
-def main() -> None:
+def get_and_save_departure_and_arrival_data(
+    _airport: str, _begin: int, _end: int
+) -> dict[str, Any]:
     """
-    Main function – collect data from api and store in cache or database
-    :return:
+    Collects arrival and departure data from OpenSky for an airport and time window.
+    :param _airport: IATA airport code.
+    :param _begin: Start of the requested time window as a Unix timestamp.
+    :param _end: End of the requested time window as a Unix timestamp.
+    :return: Dictionary containing arrival and departure records.
     """
-    with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_PATH)) as api:
+    with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_ARRDEP_PATH)) as api:
 
         # Define input parameters
-        airport = convert_iata_to_icao("FRA") # e.g. Frankfurt-am-Main International Airport
-        begin = dt_to_unix(year=2026, month=10, day=10, hour=13, minute=0) # e.g. 10 October 2026, 13:00
-        end = dt_to_unix(year=2026, month=10, day=10, hour=14, minute=0) # e.g. 10 October 2026, 14:00
+        airport_icao = convert_iata_to_icao(_airport)
 
-        data = {}
+        # Get all arrivals and departures at an airport during a specific timeframe.
+        arrivals = api.get_arrivals_by_airport(airport=airport_icao, begin=_begin, end=_end)
+        departures = api.get_departures_by_airport(airport=airport_icao, begin=_begin, end=_end)
+        if arrivals is None or departures is None:
+            raise RuntimeError("OpenSky returned no response for arrivals/departures. Your API credits may be exhausted.")
+        _data = {"arrivals": arrivals, "departures": departures}
+        return _data
+
+
+def get_and_save_states_data() -> dict[str, Any]:
+    """
+    Collects the current aircraft states from OpenSky.
+    :return: Dictionary containing aircraft-state records.
+    """
+    with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_STATES_PATH)) as api:
 
         # Get all locations of aircraft in the air at the moment
-        if COLLECT_DATA["data"]["states"]:
-            data["states"] = api.get_states()
+        states = api.get_states()
+        if states is None:
+            raise RuntimeError("OpenSky returned no response for states. Your API credits may be exhausted.")
+        return {"states": states}
 
-        # Get all arrivals at an airport during a specific timeframe.
-        if COLLECT_DATA["data"]["arrivals"]:
-            data["arrivals"] = api.get_arrivals_by_airport(airport=airport, begin=begin, end=end)
+# def get_and_save_tracks_data():
+#     with OpenSkyApi(token_manager=TokenManager.from_json_file(CREDENTIALS_ARRDEP_PATH)) as api:
+#
+#         icao24 = "39de59"
+#
+#         # Get the track data for the plane that is currently flying (t=0)
+#         track = api.get_track_by_aircraft(icao24=icao24, t=0)
+#
+#         print(type(track))
+#         print(track)
+#
+#         if track is None:
+#             print("No live track was found for this aircraft.")
+#         else:
+#             from pprint import pprint
+#             pprint(vars(track))
+#             pprint(track.path)
 
-        # Get all departures from an airport during a specific timeframe.
-        if COLLECT_DATA["data"]["departures"]:
-            data["departures"] = api.get_departures_by_airport(airport=airport, begin=begin, end=end)
 
-        # Get all flights detected during a specific timeframe.
-        if COLLECT_DATA["data"]["intervals"]:
-            data["intervals"] = api.get_flights_from_interval(begin=begin, end=end)
+def clean_data(_data: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """
+    Converts OpenSky response objects into cleaned dictionary records.
+    :param _data: Dictionary containing OpenSky response objects.
+    :return: Dictionary containing cleaned records grouped by data type.
+    """
+    # Convert OpenSky response objects into dictionaries for JSON and MongoDB
+    _cleaned_data = {}
+    for key, value in _data.items():
+        if key == "states":
+            records = value.states if value is not None else []
+        else:
+            records = value or []
+        _cleaned_data[key] = [vars(record) for record in records]
 
-        # Convert OpenSky response objects into dictionaries for JSON and MongoDB
-        cleaned_data = {}
-        for key, value in data.items():
-            if key == "states":
-                records = value.states if value is not None else []
-            else:
-                records = value or []
-            cleaned_data[key] = [vars(record) for record in records]
+    # Clean data (change date format, remove spaces from callsigns, add iata airport codes)
+    for value in _cleaned_data.values():
+        for item in value:
+            # Convert dates
+            for field in ["time_position", "last_contact", "firstSeen", "lastSeen"]:
+                if item.get(field) is not None:
+                    item[field] = unix_to_dt(item[field]).isoformat()
+            # Convert callsigns
+            if item.get("callsign") is not None:
+                item["callsign"] = item["callsign"].strip()
+            # Add converted airport codes
+            if item.get("estArrivalAirport") is not None:
+                item["estArrivalAirportIATA"] = convert_icao_to_iata(item["estArrivalAirport"])
+            if item.get("estDepartureAirport") is not None:
+                item["estDepartureAirportIATA"] = convert_icao_to_iata(item["estDepartureAirport"])
+    return _cleaned_data
 
-        # Clean data (change date format, remove spaces from callsigns, add iata airport codes)
-        for value in cleaned_data.values():
-            for item in value:
-                # Convert dates
-                for field in ["time_position", "last_contact", "firstSeen", "lastSeen"]:
-                    if item.get(field) is not None:
-                        item[field] = unix_to_dt(item[field]).isoformat()
-                # Convert callsigns
-                if item.get("callsign") is not None:
-                    item["callsign"] = item["callsign"].strip()
-                # Add converted airport codes
-                if item.get("estArrivalAirport") is not None:
-                    item["estArrivalAirportIATA"] = convert_icao_to_iata(item["estArrivalAirport"])
-                if item.get("estDepartureAirport") is not None:
-                    item["estDepartureAirportIATA"] = convert_icao_to_iata(item["estDepartureAirport"])
+def save_data(_destination: str, _cleaned_data: dict[str, list[dict[str, Any]]]) -> None:
+    """
+    Saves cleaned flight records to the configured cache or databases.
+    :param _destination: Where to store the data (cache or database).
+    :param _cleaned_data: Dictionary containing cleaned records grouped by data type.
+    :return: None.
+    """
+    # Store data in the cache
+    if _destination == "cache":
+        for key, documents in _cleaned_data.items():
+            with open(f"cached_data/{key}.json", "w") as f:
+                json.dump(documents, f, indent=4)
 
-        # Store data in the cache
-        if COLLECT_DATA["destination"] == "cache":
-            for key, documents in cleaned_data.items():
-                with open(f"cached_data/{key}.json", "w") as f:
-                    json.dump(documents, f, indent=4)
+    # Store data in the database
+    if _destination == "database":
 
-        # Store data in the database
-        if COLLECT_DATA["destination"] == "database":
+        # Connect to MongoDB
+        if not MONGO_URI:
+            raise ValueError("MONGO_URI is missing from .env")
+        client = MongoClient(MONGO_URI)
 
-            # Create authentication uri
-            uri = (
-                "mongodb+srv://"
-                f"{quote_plus(DB_USERNAME)}:{quote_plus(DB_PASSWORD)}"
-                "@liora-airlines.uad1f8o.mongodb.net/"
-            )
+        try:
+            # Add the dictionary documents to their matching collections.
+            for key, documents in _cleaned_data.items():
+                db = client["airline-data"]
+                collection = db[key]
+                if documents:
+                    collection.insert_many(documents)
+                else:
+                    raise Exception("No documents found to add to the database")
 
-            # Connect to MongoDB
-            client = MongoClient(uri)
+            # Close the connection
+            client.close()
 
-            try:
-                # Add the dictionary documents to their matching collections.
-                for key, documents in cleaned_data.items():
-                    db = client["airline-data"]
-                    collection = db[key]
-                    if documents:
-                        collection.insert_many(documents)
-                    else:
-                        raise Exception("No documents found to add to the database")
+        except Exception as e:
+            raise Exception("The following error occurred: ", e)
 
-                # Close the connection
-                client.close()
+        # Load data to SQL database
+        save_states_sql(_cleaned_data)
+        save_arrivals_sql(_cleaned_data)
+        save_departures_sql(_cleaned_data)
 
-            except Exception as e:
-                raise Exception("The following error occurred: ", e)
-                
-            
-            # Load data to SQL database
-            save_arrivals_sql(cleaned_data)
-            save_departures_sql(cleaned_data)
-            save_intervals_sql(cleaned_data)
-            save_states_sql(cleaned_data)
-
+def generate_begin_and_end(_type:str) -> tuple[list[int], list[int]]:
+    """
+    Generates the start and end timestamps for the OpenSky data request.
+    :return: Tuple containing the begin and end Unix timestamps.
+    """
+    month = datetime.now().month
+    day = datetime.now().day
+    _begin = []
+    _end = []
+    if _type == "single":
+        for i in range(6,22):
+            _begin.append(dt_to_unix(year=2026, month=month, day=day, hour=i, minute=0))
+            _end.append(dt_to_unix(year=2026, month=month, day=day, hour=i+1, minute=0))
+    elif _type == "multiple":
+        for i in [9,14,19]:
+            _begin.append(dt_to_unix(year=2026, month=month, day=day, hour=i, minute=0))
+            _end.append(dt_to_unix(year=2026, month=month, day=day, hour=i+1, minute=0))
+    else:
+        raise ValueError("Invalid argument for _type")
+    return _begin, _end
 
 
 if __name__ == "__main__":
-    main()
+    # Collect arguments from the shell command
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--type", required=True)
+    parser.add_argument("--destination", default="database")
+    args = parser.parse_args()
+
+    # Collects and saves the states data at the moment it is called
+    # Runs at 9:00, 14:00, and 19:00 everyday
+    if args.type == "states":
+        data = get_and_save_states_data()
+
+    # Collects and saves the arrival and departure data for the previous day
+    # Runs at 23:00 everyday
+    # Collects hourly data from FRA from 6:00-22:00 and data from BER, MUC, and HAM at 9:00, 14:00, 19:00
+    elif args.type == "arrdep":
+        # First only the hourly data from FRA from 6:00-22:00
+        begin_list, end_list = generate_begin_and_end("single")
+        data = {"arrivals": [], "departures": []}
+        for begin, end in zip(begin_list, end_list):
+            data_tmp = get_and_save_departure_and_arrival_data("FRA", begin, end)
+            time.sleep(1)
+            print(
+                "FRA",
+                datetime.fromtimestamp(begin, ZoneInfo("Europe/Berlin")).isoformat(),
+                f"arrivals={len(data_tmp['arrivals'])}",
+                f"departures={len(data_tmp['departures'])}",
+            )
+            data["arrivals"].extend(data_tmp["arrivals"])
+            data["departures"].extend(data_tmp["departures"])
+
+        # Now the data from BER, MUC, and HAM at 9:00, 14:00, 19:00
+        begin_list, end_list = generate_begin_and_end("multiple")
+        airports = ["BER", "MUC", "HAM"]
+        for begin, end in zip(begin_list, end_list):
+            for airport in airports:
+                data_tmp = get_and_save_departure_and_arrival_data(airport, begin, end)
+                time.sleep(1)
+                print(
+                    airport,
+                    datetime.fromtimestamp(begin, ZoneInfo("Europe/Berlin")).isoformat(),
+                    f"arrivals={len(data_tmp['arrivals'])}",
+                    f"departures={len(data_tmp['departures'])}",
+                )
+                data["arrivals"].extend(data_tmp["arrivals"])
+                data["departures"].extend(data_tmp["departures"])
+
+    else:
+       raise ValueError("Invalid argument for --type")
+
+    cleaned_data = clean_data(data)
+    save_data(args.destination, cleaned_data)
+
+    # Save to log
+    print(
+        f"{datetime.now().astimezone().isoformat()}: "
+        f"{sum(len(records) for records in cleaned_data.values())} {args.type} entries added"
+    )
+    print("====================================================")
