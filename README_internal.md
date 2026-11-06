@@ -1,23 +1,16 @@
 # Internal guide: OpenSky collection pipeline
 
-This document is for the project team. Each person must use their own OpenSky and MongoDB credentials. Do not share or commit `.env` or `credentials.json`; both are ignored by Git.
+This document describes the OpenSky collection pipeline used by the project. OpenSky, MongoDB, and Neon credentials are kept outside version control in `.env` and credential JSON files.
 
 ## Current project focus
 
 We are focusing on **airport arrivals** and **airport departures** first. These are the two datasets to use for the next stage of analysis and visualisation.
 
-Current aircraft **states** may also be useful as supplementary live data, so the states request remains available behind its collection switch.
+Current aircraft **states** are collected as live snapshots. Arrival and departure data is collected for configured airport/time windows.
 
-## Local setup
+## Project environment
 
-From the repository root, create and activate a virtual environment:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-Install the existing requirements and the official OpenSky Python client:
+The project uses a Python virtual environment at `.venv`. Its dependencies include the project requirements, PyMongo, and the official OpenSky Python client:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -27,73 +20,73 @@ python -m pip install "git+https://github.com/openskynetwork/opensky-api.git#sub
 
 ## Credentials and `.env`
 
-Create your local environment file from the template:
+The environment configuration is represented by `.env.example`; the active configuration is stored in the uncommitted `.env` file:
 
 ```bash
 cp .env.example .env
 ```
 
-Create an OpenSky API client in your own OpenSky account and download its `credentials.json` file. Put it in the repository root:
+The collection pipeline uses separate OpenSky credential JSON files for airport arrivals/departures and states. The configured files are stored in the repository root:
 
 ```text
 sep26_bde_int_dst_airlines/
 ├── .env
-├── credentials.json
+├── credentials-arrdep.json
+├── credentials-states.json
 ├── README_internal.md
 └── src/
 ```
 
-The JSON file is supplied by OpenSky and contains your `clientId` and `clientSecret`. Do not copy either value into source code or commit the file.
+Each JSON file is supplied by OpenSky and contains a `clientId` and `clientSecret`. These values are not stored in source code.
 
-Set these values in `.env`:
+The `.env` configuration contains values in this form:
 
 ```dotenv
 # Paths are relative when scripts are run from src/data.
-CREDENTIALS_PATH=path-to-your-credentials.json
+CREDENTIALS_ARRDEP_PATH=path-to-your-arrivals-departures-credentials.json
+CREDENTIALS_STATES_PATH=path-to-your-states-credentials.json
 
-# Your own MongoDB Atlas database user.
-DB_USERNAME=your-mongodb-username
-DB_PASSWORD=your-mongodb-password
+# MongoDB Atlas connection string from Atlas → Connect → Drivers.
+MONGO_URI=mongodb+srv://your-mongodb-username:your-mongodb-password@your-cluster.mongodb.net/?retryWrites=true&w=majority
+DB_NAME=airline-data
+
+# Neon PostgreSQL connection string.
+DATABASE_URL=your-neon-connection-string
 ```
 
-`CREDENTIALS_PATH` is used by `make_dataset.py`. `make_dataset.py` URL-encodes the MongoDB username and password before building the Atlas connection URI, so passwords with characters such as `@` or `:` are supported.
+`CREDENTIALS_ARRDEP_PATH` is used for airport arrivals/departures and `CREDENTIALS_STATES_PATH` is used for live states. `MONGO_URI` is read directly by `make_dataset.py`; URL-encode special characters in the username or password if required by your Atlas connection string.
 
 ## What `make_dataset.py` does
 
-Run the script from `src/data`, because its local data paths are relative to that directory:
+`make_dataset.py` runs from `src/data`, because its local data paths are relative to that directory. Its collection modes are invoked in this form:
 
 ```bash
 cd src/data
-python make_dataset.py
+python make_dataset.py --type states
 ```
 
-The script performs the following steps:
+`states` collects a live aircraft-state snapshot. `arrdep` collects hourly FRA arrivals/departures from 06:00 through 22:00, plus BER, MUC, and HAM data for 09:00, 14:00, and 19:00.
 
-1. Loads the local `.env` file and authenticates with OpenSky using `credentials.json`. The official client refreshes the OAuth token automatically.
-2. Converts the chosen IATA airport code (`FRA`) to OpenSky's ICAO airport code (`EDDF`).
-3. Converts the configured local start and end date-times to Unix timestamps using `Europe/Berlin`.
-4. Calls the selected OpenSky endpoints.
-5. Converts each returned OpenSky object to a plain dictionary using `vars()`. This is required because JSON and MongoDB cannot directly store `StateVector` and flight-client objects.
-6. Stores the selected dictionaries either in local JSON cache files or in MongoDB Atlas.
+Both collection modes save to MongoDB and Neon by default. The optional `--destination cache` setting writes local JSON cache files instead:
 
-The airport code and time window are example inputs. Change them before running a new collection.
-
-## Configure what is collected
-
-At the top of `src/data/make_dataset.py`, `COLLECT_DATA` controls both the endpoint calls and destination:
-
-```python
-COLLECT_DATA = {
-    "data": {
-        "arrivals": True,
-        "departures": True,
-        "states": True,
-    },
-    "destination": "database",  # use "cache" for local JSON files
-}
+```bash
+python make_dataset.py --type states --destination cache
 ```
 
-For the current scope, keep `arrivals` and `departures` enabled. States are optional.
+The script loads `.env`, authenticates with OpenSky, converts the returned objects to dictionaries, cleans date/callsign/airport fields, then stores the results.
+
+## Scheduled collection
+
+The project uses the following crontab entries for automated collection:
+
+```cron
+0 9,14,19 * * * cd /Users/adam/PycharmProjects/sep26_bde_int_dst_airlines/src/data && /Users/adam/PycharmProjects/sep26_bde_int_dst_airlines/.venv/bin/python make_dataset.py --type states >> opensky_states.log 2>&1
+0 23 * * * cd /Users/adam/PycharmProjects/sep26_bde_int_dst_airlines/src/data && /Users/adam/PycharmProjects/sep26_bde_int_dst_airlines/.venv/bin/python make_dataset.py --type arrdep >> opensky_arrdep.log 2>&1
+```
+
+They collect live states at 09:00, 14:00, and 19:00, and airport arrivals/departures at 23:00 every day.
+
+The log files are written to `src/data`.
 
 ## Storage behavior
 
@@ -105,7 +98,7 @@ src/data/cached_data/arrivals.json
 src/data/cached_data/departures.json
 ```
 
-When `destination` is `"database"`, it inserts the same dictionary records into the `airline-data` database, using one collection per dataset name (`states`, `arrivals`, and `departures`). Empty responses are skipped.
+When `destination` is `"database"`, it inserts the same dictionary records into the `airline-data` database, using one collection per dataset name (`states`, `arrivals`, and `departures`).
 
 MongoDB inserts create new documents on every run. Until unique keys or upsert logic are added, rerunning the same collection can create duplicates.
 
@@ -115,7 +108,7 @@ MongoDB inserts create new documents on every run. Until unique keys or upsert l
 
 ## Check OpenSky flight quota
 
-`src/data/check_rate_limits.py` makes an arrival request and prints the response status plus OpenSky's quota headers. Run it from `src/data`:
+`src/data/check_rate_limits.py` makes an arrival request and prints the response status plus OpenSky's quota headers:
 
 ```bash
 python check_rate_limits.py
@@ -129,17 +122,11 @@ Useful results:
 
 Use the local cache for UI work whenever possible so beta testing does not consume additional flight-query credits.
 
-## Run the Streamlit visualisation
+## Streamlit visualisation
 
-Start Streamlit from the visualisation folder:
+The Streamlit visualisation is served from the visualisation folder:
 
 ```bash
 cd src/visualization
 streamlit run visualize.py
-```
-
-If Streamlit is not installed in the active virtual environment, install it first:
-
-```bash
-python -m pip install streamlit
 ```
