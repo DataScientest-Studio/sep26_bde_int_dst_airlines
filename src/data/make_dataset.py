@@ -10,8 +10,6 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-# Import functions to load data into SQL database
-from sql_loader import *
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -211,10 +209,6 @@ def save_data(_destination: str, _cleaned_data: dict[str, list[dict[str, Any]]])
         except Exception as e:
             raise Exception("The following error occurred: ", e)
 
-        # Load data to SQL database
-        save_states_sql(_cleaned_data)
-        save_arrivals_sql(_cleaned_data)
-        save_departures_sql(_cleaned_data)
 
 def generate_begin_and_end(_type:str) -> tuple[list[int], list[int]]:
     """
