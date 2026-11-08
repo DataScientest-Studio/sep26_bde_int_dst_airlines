@@ -81,10 +81,10 @@ The project uses the following crontab entries for automated collection:
 
 ```cron
 0 9,14,19 * * * cd /Users/adam/PycharmProjects/sep26_bde_int_dst_airlines/src/data && /Users/adam/PycharmProjects/sep26_bde_int_dst_airlines/.venv/bin/python make_dataset.py --type states >> opensky_states.log 2>&1
-0 23 * * * cd /Users/adam/PycharmProjects/sep26_bde_int_dst_airlines/src/data && /Users/adam/PycharmProjects/sep26_bde_int_dst_airlines/.venv/bin/python make_dataset.py --type arrdep >> opensky_arrdep.log 2>&1
+0 5 * * * cd /Users/adam/PycharmProjects/sep26_bde_int_dst_airlines/src/data && /Users/adam/PycharmProjects/sep26_bde_int_dst_airlines/.venv/bin/python make_dataset.py --type arrdep >> opensky_arrdep.log 2>&1
 ```
 
-They collect live states at 09:00, 14:00, and 19:00, and airport arrivals/departures at 23:00 every day.
+They collect live states at 09:00, 14:00, and 19:00, and airport arrivals/departures at 5:00 every day (for the previous day).
 
 The log files are written to `src/data`.
 

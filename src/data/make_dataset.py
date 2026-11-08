@@ -6,7 +6,7 @@ import time
 from pymongo import MongoClient
 import dotenv
 from opensky_api import OpenSkyApi, TokenManager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -215,8 +215,9 @@ def generate_begin_and_end(_type:str) -> tuple[list[int], list[int]]:
     Generates the start and end timestamps for the OpenSky data request.
     :return: Tuple containing the begin and end Unix timestamps.
     """
-    month = datetime.now().month
-    day = datetime.now().day
+    yesterday = datetime.now() - timedelta(days=1)
+    month = yesterday.month
+    day = yesterday.day
     _begin = []
     _end = []
     if _type == "single":
