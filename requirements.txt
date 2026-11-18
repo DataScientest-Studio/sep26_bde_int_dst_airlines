@@ -8,3 +8,9 @@ psycopg[binary]
 fastapi
 uvicorn
 pymongo[srv]
+
+urllib.parse
+geopandas
+shapely.geometry
+datetime
+zoneinfo
