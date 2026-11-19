@@ -158,13 +158,6 @@ world = world[["CONTINENT", "geometry"]]
 
 world = world.to_crs("EPSG:4326")
 
-yesterday = datetime.now(ZoneInfo("Europe/Berlin")).date() - timedelta(days=1)
-
-
-start = datetime.combine(yesterday, datetime.min.time(), tzinfo=ZoneInfo("Europe/Berlin"))
-end = start + timedelta(days=1)
-
-
 continent_pipeline = [
     {
         "$match": {
@@ -236,3 +229,5 @@ hourly_counts = hourly_counts.reindex(columns=continents, fill_value=0)
 hourly_counts["total"] = hourly_counts.sum(axis=1)
 hourly_counts.columns.name = None
 hourly_counts_df = hourly_counts.reset_index()
+
+print(hourly_counts_df.to_string())
