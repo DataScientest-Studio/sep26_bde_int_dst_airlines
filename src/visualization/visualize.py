@@ -2,6 +2,18 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+import sys
+from pathlib import Path
+
+# Get the project root directory
+project_root = Path(__file__).resolve().parent.parent
+
+# Add project root to Python's module search path
+sys.path.insert(0, str(project_root))
+
+from models.train_model import train_model
+import matplotlib.pyplot as plt
+
 
 st.set_page_config(page_title="Air Traffic Dashboard", page_icon="✈️", layout="wide")
 st.html("<style>[data-testid='stHeaderActionElements'] {display: none;}</style>")  # hide links next to headers
@@ -286,3 +298,9 @@ with pie_column:
     st.altair_chart(continent_pie_chart(selected_continents), width="stretch")
 with continent_bar_column:
     st.altair_chart(continent_bar_chart(selected_continents), width="stretch")
+
+
+#########################################
+######## Machine Learning Plots #########
+#########################################
+
