@@ -4,14 +4,12 @@ import streamlit as st
 
 import sys
 from pathlib import Path
-
-# Get the project root directory
-project_root = Path(__file__).resolve().parent.parent
-
-# Add project root to Python's module search path
+# Add the project root to Python's import path
+project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
-from models.train_model import train_model
+from src.models.predict_model import *
+
 import matplotlib.pyplot as plt
 
 
@@ -303,4 +301,8 @@ with continent_bar_column:
 #########################################
 ######## Machine Learning Plots #########
 #########################################
+st.divider()
+st.header("Machine Learning")
 
+curve_chart(results)
+predict_week(results)

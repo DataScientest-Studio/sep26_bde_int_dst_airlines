@@ -4,7 +4,7 @@ import pandas as pd
 import psycopg
 from dotenv import load_dotenv
 
-from get_stats_mongo import departure_df, arrival_df, flights_per_hour_df, hourly_counts_df
+from src.data.get_stats_mongo import departure_df, arrival_df, flights_per_hour_df, hourly_counts_df
 
 load_dotenv()
 

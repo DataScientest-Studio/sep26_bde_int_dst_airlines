@@ -3,11 +3,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-from train_model import train_model
+from src.models.train_model import train_model
 
-
-st.divider()
-st.header("Machine Learning")
 
 # Retrieve model data
 results = train_model()
@@ -18,7 +15,7 @@ def curve_chart(results):
     Builds a curve chart that compares the number of flights to predicted number of flights.
     :param results: Trained dataset
     """
-    fig, ax = plt.subplots(figsize=(9, 4))
+    fig, ax = plt.subplots(figsize=(7, 4))
 
     # Create curve for actual data
     ax.plot(
@@ -43,7 +40,7 @@ def curve_chart(results):
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
     fig.autofmt_xdate()
 
-    return st.pyplot(fig)
+    return st.pyplot(fig, use_container_width=False)
 
 
 
@@ -112,10 +109,9 @@ def predict_week(results):
     st.bar_chart(
         daily_forecast.set_index("date")["predicted_arrivals"],
         y_label="Predicted arrivals",
-        x_label="Date"
+        x_label="Date",
+        height=500,
+        width=700
     )
 
     return st.dataframe(daily_forecast, hide_index=True)
-
-curve_chart(results)
-predict_week(results)
