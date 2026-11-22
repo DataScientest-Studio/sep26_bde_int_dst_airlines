@@ -158,20 +158,9 @@ world = world[["CONTINENT", "geometry"]]
 
 world = world.to_crs("EPSG:4326")
 
-yesterday = datetime.now(ZoneInfo("Europe/Berlin")).date() - timedelta(days=1)
-
-
-start = datetime.combine(yesterday, datetime.min.time(), tzinfo=ZoneInfo("Europe/Berlin"))
-end = start + timedelta(days=1)
-
-
 continent_pipeline = [
     {
         "$match": {
-            "last_contact": {
-                "$gte": start.isoformat(),
-                "$lt": end.isoformat()
-            },
             "on_ground": False,
             "latitude": {"$ne": None},
             "longitude": {"$ne": None}
@@ -187,16 +176,28 @@ unique_coordinates = continent_df[["latitude", "longitude"]].drop_duplicates()
 
 unique_coordinates = unique_coordinates.copy()
 
-unique_coordinates["continent"] = unique_coordinates.apply(
-    lambda row: world[
-        world.geometry.contains(Point(row["longitude"], row["latitude"]))
-    ]["CONTINENT"].values[0]
-    if not world[
-        world.geometry.contains(Point(row["longitude"], row["latitude"]))
-    ].empty
-    else "Unknown",
-    axis=1
+points = gpd.GeoDataFrame(
+    unique_coordinates,
+    geometry=gpd.points_from_xy(
+        unique_coordinates["longitude"],
+        unique_coordinates["latitude"]
+    ),
+    crs="EPSG:4326"
 )
+
+points = gpd.sjoin(
+    points,
+    world,
+    how="left",
+    predicate="within"
+)
+
+unique_coordinates = (
+    points.drop(columns=["geometry", "index_right"])
+    .rename(columns={"CONTINENT": "continent"})
+)
+
+unique_coordinates["continent"] = unique_coordinates["continent"].fillna("Unknown")
 
 continent_df = continent_df.merge(
     unique_coordinates,
@@ -229,3 +230,4 @@ hourly_counts["total"] = hourly_counts.sum(axis=1)
 hourly_counts.columns.name = None
 hourly_counts_df = hourly_counts.reset_index()
 
+print(hourly_counts_df.to_string())
