@@ -9,6 +9,10 @@ fastapi
 uvicorn
 pymongo[srv]
 
+matplotlib-pyplot
+matplotlib-dates
+sys
+pathlib
 urllib.parse
 geopandas
 shapely.geometry

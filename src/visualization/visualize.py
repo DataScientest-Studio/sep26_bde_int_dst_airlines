@@ -2,6 +2,16 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+import sys
+from pathlib import Path
+# Add the project root to Python's import path
+project_root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(project_root))
+
+from src.models.predict_model import *
+
+import matplotlib.pyplot as plt
+
 
 st.set_page_config(page_title="Air Traffic Dashboard", page_icon="✈️", layout="wide")
 st.html("<style>[data-testid='stHeaderActionElements'] {display: none;}</style>")  # hide links next to headers
@@ -286,3 +296,13 @@ with pie_column:
     st.altair_chart(continent_pie_chart(selected_continents), width="stretch")
 with continent_bar_column:
     st.altair_chart(continent_bar_chart(selected_continents), width="stretch")
+
+
+#########################################
+######## Machine Learning Plots #########
+#########################################
+st.divider()
+st.header("Machine Learning")
+
+curve_chart(results)
+predict_week(results)
